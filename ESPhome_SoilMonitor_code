@@ -1,0 +1,475 @@
+substitutions:
+  sensor_pin_0: "32"
+  sensor_pin_1: "33"
+  sensor_pin_2: "34"
+  sensor_pin_3: "35"
+  sensor_pin_4: "36"
+
+  max_run_duration: 60s
+  sleep_duration: 10min
+
+esphome:
+  name: soilmonitor
+  friendly_name: ESP 5ch SoilMonitor
+  on_boot:
+    priority: -100
+    then:
+      - wait_until:
+            condition:
+              api.connected
+            timeout: 10s
+      
+      - script.execute: consider_deep_sleep
+      - logger.log: "Starting sensor updates…"
+      - repeat:
+          count: 5
+          then:
+            #Sensor updates are turned off and manually requested on boot. 
+            #Then the ESP goes back to sleep when they're done (unless told to stay awake)
+
+            #Request sensor updates
+            - component.update: adcMoisture0
+            - delay: 100ms
+            - component.update: adcMoisture1
+            - delay: 100ms
+            - component.update: adcMoisture2
+            - delay: 100ms
+            - component.update: adcMoisture3
+            - delay: 100ms
+            - component.update: adcMoisture4
+            - delay: 100ms
+            - component.update: adcRaw_Sensor_Data0
+            - delay: 100ms
+            - component.update: adcRaw_Sensor_Data1
+            - delay: 100ms
+            - component.update: adcRaw_Sensor_Data2
+            - delay: 100ms
+            - component.update: adcRaw_Sensor_Data3
+            - delay: 100ms
+            - component.update: adcRaw_Sensor_Data4
+            - delay: 100ms
+  
+  on_shutdown:
+    priority: -100
+    then:
+      - if:
+          condition:
+            - binary_sensor.is_on: all_updates_recieved
+          then:
+            - logger.log: "Data from all sensors recieved"
+          else: 
+            - logger.log: "One or more sensor updates missing" 
+      
+      # Reset data update sensors states
+      - binary_sensor.template.publish:
+          id: inside_adcMoisture0_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcMoisture1_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcMoisture2_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcMoisture3_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcMoisture4_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcRaw_Sensor_Data0_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcRaw_Sensor_Data1_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcRaw_Sensor_Data2_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcRaw_Sensor_Data3_recieved
+          state: OFF
+      - binary_sensor.template.publish:
+          id: inside_adcRaw_Sensor_Data4_recieved
+          state: OFF
+           
+esp32:
+  board: lolin32
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: INFO
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "Example Key"
+
+ota:
+  - platform: esphome
+    password: "Example password"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Testdevice Fallback Hotspot"
+    password: "Example password"
+
+captive_portal:
+
+time:
+  platform: sntp
+  id: sntp_time
+  timezone: Europe/Berlin
+
+web_server:
+    port: 80
+    
+status_led:
+  pin: 
+    number: GPIO5
+    inverted: false
+   
+deep_sleep:
+  id: deep_sleep_1
+  sleep_duration: $sleep_duration
+  run_duration: 
+    default: $max_run_duration
+    
+# Will only pick up a value if this device is configured in Home Assistant > Integrations
+# If the device isn't configured, or Home Assistant is offline, it'll default to false
+binary_sensor:
+  - platform: homeassistant
+    id: prevent_deep_sleep
+    entity_id: input_boolean.prevent_deep_sleep
+
+    #Internal sensor states
+  - platform: template
+    name: Moisture 1 Level updated
+    id: inside_adcMoisture0_recieved
+    internal: True
+  - platform: template
+    name: Moisture 2 Level updated
+    id: inside_adcMoisture1_recieved
+    internal: True
+  - platform: template
+    name: Moisture 3 Level updated
+    id: inside_adcMoisture2_recieved
+    internal: True
+  - platform: template
+    name: Moisture 4 Level updated
+    id: inside_adcMoisture3_recieved
+    internal: True
+  - platform: template
+    name: Moisture 5 Level updated
+    id: inside_adcMoisture4_recieved
+    internal: True
+  - platform: template
+    name: Voltage sensor 1 Value updated
+    id: inside_adcRaw_Sensor_Data0_recieved
+    internal: True
+  - platform: template
+    name: Voltage sensor 2 Value updated
+    id: inside_adcRaw_Sensor_Data1_recieved
+    internal: True
+  - platform: template
+    name: Voltage sensor 3 Value updated
+    id: inside_adcRaw_Sensor_Data2_recieved
+    internal: True
+  - platform: template
+    name: Voltage sensor 4 Value updated
+    id: inside_adcRaw_Sensor_Data3_recieved
+    internal: True
+  - platform: template
+    name: Voltage sensor 5 Value updated
+    id: inside_adcRaw_Sensor_Data4_recieved
+    internal: True
+    
+    #All updates
+  - platform: template
+    name: Updates from all sensors recieved
+    id: all_updates_recieved
+    icon: mdi:database-refresh-outline
+    # entity_category: diagnostic
+    # If all sensors data is received. Will be false even if only one sensor fails.
+    lambda: |-
+      return
+      id(inside_adcMoisture0_recieved).state &&
+      id(inside_adcMoisture1_recieved).state &&
+      id(inside_adcMoisture2_recieved).state &&
+      id(inside_adcMoisture3_recieved).state &&
+      id(inside_adcMoisture4_recieved).state &&
+      id(inside_adcRaw_Sensor_Data0_recieved).state &&
+      id(inside_adcRaw_Sensor_Data1_recieved).state &&
+      id(inside_adcRaw_Sensor_Data2_recieved).state &&
+      id(inside_adcRaw_Sensor_Data3_recieved).state &&
+      id(inside_adcRaw_Sensor_Data4_recieved).state;
+    on_press: 
+      then:
+        - if:
+            condition:
+              binary_sensor.is_on: prevent_deep_sleep
+            then: 
+              - deep_sleep.prevent: deep_sleep_1
+              - logger.log: 'Skipping sleep… prevent_deep_sleep is activated!'
+            else:
+              - logger.log:
+                  format: "All sensors updated after %.1f seconds of uptime. Entering deep sleep."
+                  args: ['id(uptime_seconds).state']
+              - delay: 100ms
+              - deep_sleep.enter:
+                  id: deep_sleep_1
+
+script:
+  - id: consider_deep_sleep
+    mode: queued
+    then:
+      - delay: 10s
+      - if:
+          condition:
+            binary_sensor.is_on: prevent_deep_sleep
+          then:
+            - deep_sleep.prevent: deep_sleep_1
+            - logger.log: 'Skipping sleep… prevent_deep_sleep is activated!'
+          else: 
+            - deep_sleep.allow: deep_sleep_1
+          
+      - script.execute: consider_deep_sleep
+
+sensor:
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_0
+      allow_other_uses: true
+    id: adcMoisture0
+    #samples: 5
+    accuracy_decimals: 5
+    unit_of_measurement: '%'
+    filters:
+      - calibrate_linear:
+        - 0.35254  -> 100
+        - 0.82617 -> 0
+      - median:
+          window_size: 7
+          send_every: 4
+          send_first_at: 1
+      - lambda: |
+          if (x < 0) return 0; 
+          else if (x > 100) return 100;
+          else return (x);
+    name: "Plant - Moisture 1 Level"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcMoisture0_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_1
+      allow_other_uses: true
+    id: "adcMoisture1"
+    #samples: 5
+    accuracy_decimals: 5
+    unit_of_measurement: '%'
+    filters:
+      - calibrate_linear:
+        - 0.35254  -> 100
+        - 0.82617 -> 0
+      - median:
+          window_size: 7
+          send_every: 4
+          send_first_at: 1
+      - lambda: |
+          if (x < 0) return 0; 
+          else if (x > 100) return 100;
+          else return (x);
+    name: "Plant - Moisture 2 Level"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcMoisture1_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_2
+      allow_other_uses: true
+    id: "adcMoisture2"
+    #samples: 5
+    accuracy_decimals: 5
+    unit_of_measurement: '%'
+    filters:
+      - calibrate_linear:
+        - 0.35254  -> 100
+        - 0.82617 -> 0
+      - median:
+          window_size: 7
+          send_every: 4
+          send_first_at: 1
+      - lambda: |
+          if (x < 0) return 0; 
+          else if (x > 100) return 100;
+          else return (x);
+    name: "Plant - Moisture 3 Level"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcMoisture2_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_3
+      allow_other_uses: true
+    id: "adcMoisture3"
+    #samples: 5
+    accuracy_decimals: 5
+    unit_of_measurement: '%'
+    filters:
+      - calibrate_linear:
+        - 0.35254  -> 100
+        - 0.82617 -> 0
+      - median:
+          window_size: 7
+          send_every: 4
+          send_first_at: 1
+      - lambda: |
+          if (x < 0) return 0; 
+          else if (x > 100) return 100;
+          else return (x);
+    name: "Plant - Moisture 4 Level"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcMoisture3_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_4
+      allow_other_uses: true
+    id: "adcMoisture4"
+    #samples: 5
+    accuracy_decimals: 5
+    unit_of_measurement: '%'
+    filters:
+      - calibrate_linear:
+        - 0.35254  -> 100
+        - 0.82617 -> 0
+      - median:
+          window_size: 7
+          send_every: 4
+          send_first_at: 1
+      - lambda: |
+          if (x < 0) return 0; 
+          else if (x > 100) return 100;
+          else return (x);
+    name: "Plant - Moisture 5 Level"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcMoisture4_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_0
+      allow_other_uses: true
+    id: "adcRaw_Sensor_Data0"
+    #samples: 5
+    accuracy_decimals: 3
+    name: "Voltage Sensor 1"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcRaw_Sensor_Data0_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_1
+      allow_other_uses: true
+    id: "adcRaw_Sensor_Data1"
+    #samples: 5
+    accuracy_decimals: 3
+    name: "Voltage Sensor 2"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcRaw_Sensor_Data1_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_2
+      allow_other_uses: true
+    id: "adcRaw_Sensor_Data2"
+    #samples: 5
+    accuracy_decimals: 3
+    name: "Voltage Sensor 3"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcRaw_Sensor_Data2_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_3
+      allow_other_uses: true
+    id: "adcRaw_Sensor_Data3"
+    #samples: 5
+    accuracy_decimals: 3
+    name: "Voltage Sensor 4"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcRaw_Sensor_Data3_recieved
+            state: ON
+
+  - platform: adc
+    pin:
+      number: $sensor_pin_4
+      allow_other_uses: true
+    id: "adcRaw_Sensor_Data4"
+    #samples: 5
+    accuracy_decimals: 3
+    name: "Voltage Sensor 5"
+    update_interval: never
+    on_value: 
+      then:
+        - binary_sensor.template.publish:
+            id: inside_adcRaw_Sensor_Data4_recieved
+            state: ON
+
+  - platform: template
+    name: "Wakeup Cause"
+    accuracy_decimals: 0
+    lambda: return esp_sleep_get_wakeup_cause();
+    
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    accuracy_decimals: 0
+    
+  - platform: uptime
+    id: uptime_seconds
+    #type: timestamp
+    name: Uptime Sensor
+    update_interval: 1s
+    accuracy_decimals: 1
+    unit_of_measurement: s
